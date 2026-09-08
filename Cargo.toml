@@ -1,0 +1,12 @@
+[package]
+name = "snowball"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "snowball"
+path = "src/lib.rs"
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+ulid = "1.1"
