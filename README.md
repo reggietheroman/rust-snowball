@@ -1,5 +1,12 @@
 # Snowball
 
+*Reggiei's Notes:*
+- My first app using [Addy Osmani's agent-skills repo](https://github.com/addyosmani/agent-skills).
+- I have a git-commit skill that I used to format all commits the way I write them, ie: `[Feature][Developer]` which is why you see `[Feature][Cursor]` in all of the commits. The only manual coding I did was to adjust the TUI row formatting at the end of all the implementation
+- At this point, i'm still learning how to use the agent-skills project with cursor
+
+---
+
 Personal debt-snowball tracker. Open it to see this payment month's committed size, the split of what to send, and due dates — so money can stay in savings until you transfer. Size changes only when you record a new one; when required minima do not fit, the header shows a shortfall instead of bumping the size automatically.
 
 Local SQLite. Philippine pesos. Vim-like keys. No accounts, bank sync, or notifications.
