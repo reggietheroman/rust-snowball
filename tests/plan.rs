@@ -8,14 +8,12 @@ use snowball::statements::{RecordStatement, SqliteStatementStore, StatementStore
 
 struct Harness {
     db: SqliteDb,
-    sizes: SqliteSnowballSizeStore,
 }
 
 impl Harness {
     fn open() -> Self {
         Self {
             db: SqliteDb::open_in_memory().expect("open db"),
-            sizes: SqliteSnowballSizeStore::open_in_memory().expect("snowball store"),
         }
     }
 
@@ -31,8 +29,8 @@ impl Harness {
         SqlitePaymentStore::new(&self.db)
     }
 
-    fn sizes(&self) -> &SqliteSnowballSizeStore {
-        &self.sizes
+    fn sizes(&self) -> SqliteSnowballSizeStore<'_> {
+        SqliteSnowballSizeStore::new(&self.db)
     }
 
     fn card(&self, name: &str, balance_cents: i64) -> snowball::debts::DebtId {
@@ -76,7 +74,7 @@ impl Harness {
         compute_plan(
             payment_month,
             &self.debts(),
-            self.sizes(),
+            &self.sizes(),
             &self.statements(),
         )
         .expect("compute plan")
@@ -94,7 +92,7 @@ impl Harness {
 fn invalid_payment_month_is_validation_error() {
     let h = Harness::open();
     for payment_month in ["2026-13", "2026-9", "2026-09-01"] {
-        let err = compute_plan(payment_month, &h.debts(), h.sizes(), &h.statements()).unwrap_err();
+        let err = compute_plan(payment_month, &h.debts(), &h.sizes(), &h.statements()).unwrap_err();
         assert_eq!(err.code, ErrorCode::ValidationError);
     }
 }

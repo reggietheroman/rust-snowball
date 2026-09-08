@@ -105,7 +105,7 @@ This module does not infer `statement_month` from `due_on` or from a statement d
 
 `plan` depends on: `list_for_month(statement_month)` for the **previous** calendar month relative to the payment month. Cards with remaining balance and no row there are **no statement yet** in `plan`.
 
-`tui` depends on: `record` (including `statement_month`), `list_for_debt`, `current_for_debt`, `upcoming`.
+`tui` depends on: `record` (including `statement_month`) and `list_for_debt` (overlay; overdue is `due_on <` today on those rows). Home does not call `upcoming` — due dates on `compute_plan` lines are the list. `current_for_debt` and `upcoming` stay on the store.
 
 `payments` does **not** depend on this module.
 

@@ -1,20 +1,35 @@
 use snowball::ErrorCode;
+use snowball::db::SqliteDb;
 use snowball::snowball_size::{RecordSize, SnowballSizeStore, SqliteSnowballSizeStore};
 
-fn store() -> SqliteSnowballSizeStore {
-    SqliteSnowballSizeStore::open_in_memory().expect("in-memory store")
+struct Harness {
+    db: SqliteDb,
+}
+
+impl Harness {
+    fn open() -> Self {
+        Self {
+            db: SqliteDb::open_in_memory().expect("open db"),
+        }
+    }
+
+    fn sizes(&self) -> SqliteSnowballSizeStore<'_> {
+        SqliteSnowballSizeStore::new(&self.db)
+    }
 }
 
 #[test]
 fn empty_ledger_has_no_current() {
-    let store = store();
+    let h = Harness::open();
+    let store = h.sizes();
     assert_eq!(store.current().expect("current"), None);
     assert!(store.list().expect("list").is_empty());
 }
 
 #[test]
 fn record_persists_and_current_returns_amount() {
-    let store = store();
+    let h = Harness::open();
+    let store = h.sizes();
     let recorded = store
         .record(RecordSize {
             amount_cents: 400_00,
@@ -32,7 +47,8 @@ fn record_persists_and_current_returns_amount() {
 
 #[test]
 fn invalid_amount_is_validation_error_and_inserts_nothing() {
-    let store = store();
+    let h = Harness::open();
+    let store = h.sizes();
     for amount in [0, -100] {
         let err = store
             .record(RecordSize {
@@ -47,7 +63,8 @@ fn invalid_amount_is_validation_error_and_inserts_nothing() {
 
 #[test]
 fn list_is_oldest_first_and_current_is_latest() {
-    let store = store();
+    let h = Harness::open();
+    let store = h.sizes();
     let first = store
         .record(RecordSize {
             amount_cents: 400_00,
@@ -72,7 +89,8 @@ fn list_is_oldest_first_and_current_is_latest() {
 
 #[test]
 fn shrink_appends_row_and_keeps_history() {
-    let store = store();
+    let h = Harness::open();
+    let store = h.sizes();
     store
         .record(RecordSize {
             amount_cents: 500_00,
@@ -96,7 +114,8 @@ fn shrink_appends_row_and_keeps_history() {
 
 #[test]
 fn reaffirm_same_amount_creates_two_rows() {
-    let store = store();
+    let h = Harness::open();
+    let store = h.sizes();
     let first = store
         .record(RecordSize {
             amount_cents: 400_00,

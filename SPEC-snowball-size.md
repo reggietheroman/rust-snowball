@@ -79,7 +79,7 @@ Recording the same amount twice is allowed (a reaffirmation). It is still a new 
 ## Boundaries
 
 - **Always:** Store money as cents; validate at the store boundary; append a new row on every `record`; leave debts and statements untouched; infer current size only from the latest row.
-- **Ask first:** Deleting or editing a recorded size; a shared `Database` type that owns one connection for all modules.
+- **Ask first:** Deleting or editing a recorded size.
 - **Never:** Change size because a debt was paid off or a card minimum moved; read or write the `debts` table; use `f64` for money; unwrap on expected user/input failures; backdate `recorded_at`; store a note/reason on a size change; allow `amount_cents == 0`.
 
 ## Module contract (consumers)
@@ -123,3 +123,7 @@ Confirmed 2026-09-08.
 - History is amount + time only. No note or reason on a size change.
 - Callers cannot backdate. The store stamps `recorded_at_unix` at insert.
 - `amount_cents` must be `> 0`. You can shrink, but not to zero.
+
+Amended 2026-09-08 (for `tui`).
+
+- Table `snowball_sizes` migrates on `SqliteDb` with the other tables. `SqliteSnowballSizeStore` takes `&SqliteDb` (same pattern as payments). Public `SnowballSizeStore` behavior is unchanged. The TUI opens one `--db` file.

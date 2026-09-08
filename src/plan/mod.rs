@@ -2,6 +2,7 @@ mod compute;
 mod validate;
 
 pub use compute::compute_plan;
+pub use validate::{next_month, previous_month};
 
 use crate::debts::DebtId;
 

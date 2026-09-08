@@ -1,162 +1,313 @@
-# Tasks: plan
+# Tasks: tui
 
 Verification commands (every task):
 
-- Tests: `cargo test --test plan` (after Task 3 exists); `cargo test --test statements` for Tasks 1–2
-- Regression: `cargo test --test debts`, `cargo test --test statements`, `cargo test --test snowball_size`, and `cargo test --test payments`
+- Tests: `cargo test --test tui` (after Task 3 exists); `cargo test --test snowball_size` for Task 1
+- Regression: `cargo test --test debts`, `cargo test --test statements`, `cargo test --test snowball_size`, `cargo test --test payments`, `cargo test --test plan`
 - Build: `cargo build`
 - After checkpoints: `cargo clippy -- -D warnings` and `cargo fmt --check`
 
 ---
 
-## Task 1: statement_month on schema, types, record/get
+## Task 1: snowball_sizes on SqliteDb
 
-**Description:** Add `statement_month` (`YYYY-MM`) to `statements`. Unique key is `(debt_id, statement_month)`. `record` / `get` persist it. Recording the same card + cycle month again updates `minimum_cents` and `due_on` and keeps the id. Invalid cycle month is `VALIDATION_ERROR`. Callers pass the cycle; do not infer it from `due_on`. Update existing `RecordStatement` literals so the crate compiles.
+**Description:** Add `CREATE TABLE IF NOT EXISTS snowball_sizes` to `SqliteDb::migrate` (same columns and checks as the current size-store schema). Refactor `SqliteSnowballSizeStore` to `SqliteSnowballSizeStore<'db>` on `&SqliteDb`, matching payments. Remove the store’s private connection and `migrate`. Tests open `SqliteDb::open_in_memory()` and `SqliteSnowballSizeStore::new(&db)`. `record` / `current` / `list` behavior is unchanged.
 
 **Acceptance criteria:**
-- [x] Recording persists `statement_month` and reads it back
-- [x] Same card + `statement_month` again updates minimum and due date; one row; same id
-- [x] Invalid `statement_month` (`2026-13`, `2026-9`, `2026-08-01`) is `VALIDATION_ERROR`; nothing inserted
-- [x] `due_on` in a different calendar month than `statement_month` is allowed
-- [x] Existing loan / unknown-debt / bad `due_on` tests still pass
+- [x] `SqliteDb::open_in_memory()` creates `snowball_sizes`
+- [x] Existing snowball-size tests pass against the shared db (empty / record / current / list / reject `<= 0`)
+- [x] Store no longer opens its own `Connection`
 
 **Verification:**
-- [x] Tests pass: `cargo test --test statements`
+- [x] Tests pass: `cargo test --test snowball_size`
 - [x] Build succeeds: `cargo build`
-- [x] Regression: `cargo test --test payments` (updated `RecordStatement`)
 
 **Dependencies:** None
 
 **Files likely touched:**
 - `src/db.rs`
-- `src/statements/mod.rs`
-- `src/statements/store.rs`
-- `src/statements/validate.rs`
-- `tests/statements.rs`
-- `tests/payments.rs` (call-site only)
+- `src/snowball_size/store.rs`
+- `src/snowball_size/mod.rs`
+- `tests/snowball_size.rs`
 
 **Estimated scope:** Medium
 
 ---
 
-## Task 2: list_for_month; current and list order by cycle month
+## Task 2: plan and payments tests share SqliteDb
 
-**Description:** Add `list_for_month`. `list_for_debt` is `statement_month` ascending, then `id`. `current_for_debt` is the latest `statement_month`. `upcoming` still filters by `due_on`. Two cycle months on one card both exist.
+**Description:** Point `tests/plan.rs` and `tests/payments.rs` size helpers at `SqliteSnowballSizeStore::new(&db)` on the same `SqliteDb` as debts/statements/payments. Recording a size then `compute_plan` must see that amount. Drop the second in-memory size database.
 
 **Acceptance criteria:**
-- [x] `list_for_month("2026-08")` returns August-cycle rows only, including a row whose `due_on` is in September
-- [x] Two `statement_month` values on one card both exist; `current_for_debt` is the later month
-- [x] `list_for_debt` is `statement_month` ascending, then `id`
-- [x] `upcoming` still includes `due_on >= as_of` and excludes earlier dates
+- [x] Plan tests that record a snowball amount still allocate extra / shortfall
+- [x] Payments tests that assert snowball history is untouched still pass
+- [x] No test opens `SqliteSnowballSizeStore::open_in_memory` (that constructor is gone)
 
 **Verification:**
-- [x] Tests pass: `cargo test --test statements`
+- [x] Tests pass: `cargo test --test plan`, `cargo test --test payments`, `cargo test --test snowball_size`
+- [x] Regression: `cargo test --test debts`, `cargo test --test statements`
 - [x] Build succeeds: `cargo build`
-- [x] Regression: `cargo test --test debts`, `cargo test --test payments`, `cargo test --test snowball_size`
 
 **Dependencies:** Task 1
 
 **Files likely touched:**
-- `src/statements/mod.rs`
-- `src/statements/store.rs`
-- `tests/statements.rs`
+- `tests/plan.rs`
+- `tests/payments.rs`
 
 **Estimated scope:** Small
 
 ---
 
-## Checkpoint: statements amendment
+## Checkpoint: Shared DB
 
-- [x] Amendment success criteria in `SPEC-statements.md` are met
-- [x] `cargo test --test statements` passes
-- [x] `cargo test --test debts`, `cargo test --test payments`, and `cargo test --test snowball_size` pass
+- [x] `SqliteDb::open_in_memory()` creates `debts`, `statements`, `payments`, and `snowball_sizes`
+- [x] `cargo test --test snowball_size`, `--test plan`, `--test payments` pass
 - [x] `cargo clippy -- -D warnings` and `cargo fmt --check` pass
 
 ---
 
-## Task 3: Scaffold plan; reject bad payment month; empty register
+## Task 3: TUI scaffold, pesos, keys, empty home
 
-**Description:** Add `src/plan/` with types, `compute_plan`, and validation. Invalid `payment_month` is `VALIDATION_ERROR`. Previous-month and due-day clamp helpers have unit tests (September → August; January → previous December; due day 31 in September → `2026-09-30`). No owed debts → empty `lines`, `snowball_amount_cents` from `current()` (`None` if never recorded), `shortfall_cents` `None` when no amount, `unallocated_cents` `0`.
+**Description:** Add `src/tui/` (`mod.rs`, `money.rs`, `keys.rs`). `App` holds `Mode`, injected `today`, `payment_month`, status line. `format_pesos` / `parse_pesos` as specified. `handle_key` is a pure map for `Home` at least (`q` quit, Esc no-op, unknown ignored). Draw empty home from `mod.rs` on `TestBackend`: payment month from injected today, **no size recorded**, hint to press `d`. Add ratatui + crossterm. `pub mod tui` from `lib.rs`. No binary yet. No store writes. `home.rs` lands in Task 4.
 
 **Acceptance criteria:**
-- [x] `2026-13`, `2026-9`, and `2026-09-01` are `VALIDATION_ERROR`
-- [x] No debts: `lines` is empty
-- [x] Never recorded a snowball amount: `snowball_amount_cents` is `None`, `shortfall_cents` is `None`
-- [x] Unit tests: previous month of `2026-09` is `2026-08`; of `2026-01` is `2025-12`; due day 31 in September is `2026-09-30`
+- [x] `format_pesos(123_456) == "₱1,234.56"`; `parse_pesos("1,234.56")` is `123_456`; more than two decimals is invalid
+- [x] Injected today `2026-09-08` → home shows `2026-09`
+- [x] Empty register: no plan rows; header says no size recorded; no shortfall label
+- [x] `q` sets quit; Esc on home does not
 
 **Verification:**
-- [x] Tests pass: `cargo test --test plan`
+- [x] Tests pass: `cargo test --test tui`
 - [x] Build succeeds: `cargo build`
 
 **Dependencies:** Task 2
 
 **Files likely touched:**
-- `src/plan/mod.rs`
-- `src/plan/validate.rs`
-- `src/plan/compute.rs`
+- `Cargo.toml`
 - `src/lib.rs`
-- `tests/plan.rs`
+- `src/tui/mod.rs`
+- `src/tui/money.rs`
+- `src/tui/keys.rs`
 
 **Estimated scope:** Medium
 
 ---
 
-## Task 4: Required amounts, due dates, missing statement, omit paid-off
+## Task 4: Home draws compute_plan
 
-**Description:** With no recorded snowball amount, `compute_plan("2026-09")` lists every debt with remaining balance `> 0`. Loans: required = `min(usual payment, remaining)`, due date in September (clamped). Cards: August `list_for_month` row → required = `min(minimum, remaining)`, `due_on` from that row; no August row → `missing_statement`, required `$0`, `due_on` `None`. Extra is `$0`. Paid-off debts omitted. Lines ordered by `due_on` ascending, missing dates last, then name. January payment month uses December cycle rows.
+**Description:** On each draw (and after month change), call `compute_plan` with the app’s payment month and the four stores on the same `SqliteDb`. Header: peso size, shortfall only when `Some(n)` and `n > 0`, unallocated only when `> 0`. Body: one list — name, remaining, required, extra, send, due date. `?` if `missing_statement`; `!` if `due_on` is `Some` and `< today`. Add public `next_month` beside `previous_month` and re-export both from `plan`. `h` / `l` step the month and refresh. Tests seed data with frozen today `2026-09-08`.
 
 **Acceptance criteria:**
-- [x] September plan uses August card statements and September loan due dates
-- [x] January plan uses `statement_month = "2025-12"`
-- [x] Card with no cycle row: `missing_statement = true`, required `$0`, `due_on` `None`
-- [x] Remaining `$0` debts do not appear
-- [x] Every `extra_cents` is `$0`; `shortfall_cents` is `None`
+- [x] Seeded September home shows peso size, send amounts, and due dates from `compute_plan`
+- [x] No size recorded: header says so; lines still render; no shortfall label
+- [x] Shortfall `Some(n)` `n > 0` appears as pesos; recorded size unchanged
+- [x] Missing statement shows `?` and no invented due date; overdue `due_on` shows `!`
+- [x] `l` from `2026-09` goes to `2026-10`; `h` from `2026-01` goes to `2025-12`
+- [x] September card lines use August `statement_month` (visible via due date / missing mark — do not re-test allocation math)
 
 **Verification:**
-- [x] Tests pass: `cargo test --test plan`
+- [x] Tests pass: `cargo test --test tui`
 - [x] Build succeeds: `cargo build`
+- [x] Regression: `cargo test --test plan`
 
 **Dependencies:** Task 3
 
 **Files likely touched:**
-- `src/plan/compute.rs`
-- `tests/plan.rs`
+- `src/tui/home.rs`
+- `src/tui/mod.rs`
+- `src/plan/validate.rs`
+- `src/plan/mod.rs`
+- `tests/tui.rs`
 
 **Estimated scope:** Medium
 
 ---
 
-## Task 5: Extra rolls, cap, tie-break, shortfall, no side effects
+## Task 5: Selection, no-op p/s, help, quit
 
-**Description:** When a snowball amount is recorded and covers required minima, extra fills smallest remaining balance then rolls (name ascending when remaining matches). Usual payment / card min above remaining: required is remaining; unused amount is in the extra pool. When required minima exceed the recorded amount: keep full required lines, extra `$0`, `shortfall_cents` is the difference; do not change `current()` snowball amount. Extra may go to a missing-statement card if it is the smallest remaining. Compute does not insert payments or change balances. Unallocated extra (every remaining balance filled) is `unallocated_cents`.
+**Description:** `j` / `k` move the home selection (clamp at ends). No lines: `p` / `s` status-only, stay on home. `?` opens help (key map text); Esc or `?` closes to home. `q` from help quits. Wire `home.rs` list state. Still no overlays that write.
 
 **Acceptance criteria:**
-- [x] Loan $200 usual / $50 remaining: required $50; unused $150 is extra for the next-smallest remaining debt
-- [x] Extra fills smallest remaining up to remaining balance, then rolls; name breaks ties
-- [x] Required minima above recorded amount: full required lines, extra $0, `shortfall_cents` is the difference; recorded amount unchanged
-- [x] Missing-statement card can receive extra if it is the smallest remaining
-- [x] Compute does not add payment rows or change balances or snowball history
+- [x] `j` / `k` move selection among seeded lines; does not wrap past the ends
+- [x] `p` / `s` with no selection: status message; mode stays Home
+- [x] `?` then Esc returns to home; buffer contained key hints
+- [x] `q` from home and from help ends the session (`should_quit`)
 
 **Verification:**
-- [x] Tests pass: `cargo test --test plan`
-- [x] Regression: `cargo test --test debts`, `cargo test --test statements`, `cargo test --test snowball_size`, `cargo test --test payments`
-- [x] Clippy/fmt: `cargo clippy -- -D warnings` and `cargo fmt --check`
+- [x] Tests pass: `cargo test --test tui`
+- [x] Build succeeds: `cargo build`
 
 **Dependencies:** Task 4
 
 **Files likely touched:**
-- `src/plan/compute.rs`
-- `tests/plan.rs`
+- `src/tui/keys.rs`
+- `src/tui/home.rs`
+- `src/tui/mod.rs`
+- `src/tui/overlays.rs`
+- `tests/tui.rs`
 
 **Estimated scope:** Medium
 
 ---
 
-## Checkpoint: plan complete
+## Checkpoint: Home
 
-- [x] All success criteria in `SPEC-plan.md` are met
-- [x] Amendment success criteria in `SPEC-statements.md` are met
-- [x] `cargo test --test plan` passes
-- [x] `cargo test --test statements`, `cargo test --test debts`, `cargo test --test payments`, and `cargo test --test snowball_size` pass
+- [x] Home matches `SPEC-tui.md` (one list, pesos, marks, month step, help)
+- [x] `cargo test --test tui` passes with `TestBackend` (no TTY)
 - [x] `cargo clippy -- -D warnings` and `cargo fmt --check` pass
-- [x] Ready for review; next map module to spec is `tui`
+
+---
+
+## Task 6: Payments overlay
+
+**Description:** `p` on a selected line opens `Payments { debt_id }` with `list_for_debt`. Rows: peso amount, `paid_on`, overpayment flag when `is_overpayment` (do not block). `n` record form (amount, `paid_on` default today; debt is the line). Enter / `e` edit form (amount, `paid_on`, debt picker with `h`/`l` when that field is focused). Tab / Shift-Tab fields; Enter on last field submits; Esc discards to the list, then to home. Invalid parse or store error: status line, form stays open. After a successful write, recompute the plan; keep selection by `debt_id` if the line remains.
+
+**Acceptance criteria:**
+- [x] `p` lists that debt’s payments
+- [x] Recording a payment persists, reduces remaining, and home send/remaining refresh
+- [x] Edit amount persists; moving `debt_id` applies on the other debt
+- [x] Overpayment row is flagged; save is not blocked
+- [x] Esc closes form then overlay; `q` on the list quits
+
+**Verification:**
+- [x] Tests pass: `cargo test --test tui`
+- [x] Build succeeds: `cargo build`
+- [x] Regression: `cargo test --test payments`
+
+**Dependencies:** Task 5
+
+**Files likely touched:**
+- `src/tui/overlays.rs`
+- `src/tui/keys.rs`
+- `src/tui/mod.rs`
+- `tests/tui.rs`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 7: Statements overlay
+
+**Description:** `s` on a selected card opens `Statements { debt_id }` with `list_for_debt`. Rows with `due_on < today` marked `!`. `n` or Enter on a row opens the record form (`statement_month` defaulting to `previous_month(payment_month)`, minimum, `due_on`). Same card + cycle upserts. `s` on a loan: status message, stay on home. Do not call `upcoming`.
+
+**Acceptance criteria:**
+- [x] `s` on a card lists statements; recording persists `statement_month` and refreshes home (`?` clears when that cycle is the plan’s previous month)
+- [x] Same cycle again updates min/due; still one row
+- [x] `s` on a loan does not change mode
+- [x] Overdue statement rows in the overlay show `!`
+
+**Verification:**
+- [x] Tests pass: `cargo test --test tui`
+- [x] Build succeeds: `cargo build`
+- [x] Regression: `cargo test --test statements`
+
+**Dependencies:** Task 6
+
+**Files likely touched:**
+- `src/tui/overlays.rs`
+- `src/tui/keys.rs`
+- `src/tui/mod.rs`
+- `tests/tui.rs`
+
+**Estimated scope:** Medium
+
+---
+
+## Task 8: Size overlay
+
+**Description:** `n` on home opens `Size`. `list` displayed newest first. `n` records a new amount (peso parse → `RecordSize`). No edit/delete. Esc to home. Header uses `current` after record. Previous rows remain.
+
+**Acceptance criteria:**
+- [x] `n` on home shows history newest first
+- [x] Recording ₱500 after ₱400 updates the header to ₱500; overlay still lists both
+- [x] `amount <= 0` / bad parse does not insert; status line; form stays open
+- [x] Recording a size is the only way the header amount changes
+
+**Verification:**
+- [x] Tests pass: `cargo test --test tui`
+- [x] Build succeeds: `cargo build`
+- [x] Regression: `cargo test --test snowball_size`
+
+**Dependencies:** Task 7
+
+**Files likely touched:**
+- `src/tui/overlays.rs`
+- `src/tui/keys.rs`
+- `src/tui/mod.rs`
+- `tests/tui.rs`
+
+**Estimated scope:** Small
+
+---
+
+## Task 9: Debts list
+
+**Description:** `d` from home opens the debts list (`DebtStore::list`, paid-off included). `n` create: kind toggle, then name, balance, and loan-only payment + due day. Enter / `e` edit name and loan floor/due day (kind cannot change). `b` is `set_balance`. Esc to home. Empty home after first create should show the new line once remaining `> 0`. Paid-off (₱0) appears on this list, not on home.
+
+**Acceptance criteria:**
+- [x] Create a loan and a card; Esc home; both appear on the plan if remaining `> 0`
+- [x] Edit name / loan payment / due day persists
+- [x] `set_balance` restates remaining; home recomputes
+- [x] A ₱0 debt is on the debts list and omitted from home
+- [x] Kind cannot be changed in the edit form
+
+**Verification:**
+- [x] Tests pass: `cargo test --test tui`
+- [x] Build succeeds: `cargo build`
+- [x] Regression: `cargo test --test debts`
+
+**Dependencies:** Task 8
+
+**Files likely touched:**
+- `src/tui/debts.rs`
+- `src/tui/keys.rs`
+- `src/tui/mod.rs`
+- `tests/tui.rs`
+
+**Estimated scope:** Medium
+
+---
+
+## Checkpoint: Overlays
+
+- [x] Payments, statements, size, and debts write paths persist and refresh home
+- [x] `cargo test --test tui` passes
+- [x] `cargo test --test debts`, `--test statements`, `--test payments`, `--test snowball_size`, `--test plan` pass
+- [x] `cargo clippy -- -D warnings` and `cargo fmt --check` pass
+
+---
+
+## Task 10: Binary `--db` and `run`
+
+**Description:** Add `src/main.rs`: parse optional `--db PATH`, else default XDG/local-share path, `create_dir_all` on the parent, `SqliteDb::open`, `tui::run` (crossterm backend, local today). Unit-test path resolution with env vars (no TTY). `cargo run -- --db` is enough to launch; do not seed demo data.
+
+**Acceptance criteria:**
+- [x] `--db /tmp/snowball-test.db` opens that file (parent created if needed)
+- [x] No `--db`: uses `$XDG_DATA_HOME/snowball/snowball.db` when set, else `~/.local/share/snowball/snowball.db`
+- [x] `tui::run` exists and is not called from `tests/tui.rs`
+- [x] `cargo build` produces a `snowball` binary
+
+**Verification:**
+- [x] Tests pass: `cargo test --test tui` (path helpers; existing screen tests)
+- [x] Build succeeds: `cargo build`
+- [x] Manual check: `cargo run -- --db` on a temp file draws home (human at review)
+
+**Dependencies:** Task 9
+
+**Files likely touched:**
+- `src/main.rs`
+- `src/tui/mod.rs`
+- `Cargo.toml`
+- `tests/tui.rs`
+
+**Estimated scope:** Small
+
+---
+
+## Checkpoint: tui complete
+
+- [x] All success criteria in `SPEC-tui.md` are met
+- [x] `cargo test --test tui` passes with `TestBackend` and in-memory SQLite
+- [x] `cargo test` (full suite) passes
+- [x] `cargo clippy -- -D warnings` and `cargo fmt --check` pass
+- [x] Ready for review

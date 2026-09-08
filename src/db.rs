@@ -34,6 +34,14 @@ CREATE TABLE IF NOT EXISTS payments (
 );
 ";
 
+const SNOWBALL_SIZES_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS snowball_sizes (
+    id TEXT PRIMARY KEY NOT NULL,
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    recorded_at_unix INTEGER NOT NULL
+);
+";
+
 pub struct SqliteDb {
     conn: Connection,
 }
@@ -70,6 +78,9 @@ impl SqliteDb {
         self.conn
             .execute_batch(PAYMENTS_SCHEMA)
             .map_err(map_sqlite_error)?;
+        self.conn
+            .execute_batch(SNOWBALL_SIZES_SCHEMA)
+            .map_err(map_sqlite_error)?;
         Ok(())
     }
 }
@@ -90,7 +101,7 @@ mod tests {
         let db = SqliteDb::open_in_memory().expect("open db");
         let conn = db.conn();
 
-        for table in ["debts", "statements", "payments"] {
+        for table in ["debts", "statements", "payments", "snowball_sizes"] {
             let count: i64 = conn
                 .query_row(
                     "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",

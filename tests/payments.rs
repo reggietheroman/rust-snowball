@@ -28,8 +28,8 @@ impl Harness {
         SqliteStatementStore::new(&self.db)
     }
 
-    fn snowball_sizes(&self) -> SqliteSnowballSizeStore {
-        SqliteSnowballSizeStore::open_in_memory().expect("snowball store")
+    fn snowball_sizes(&self) -> SqliteSnowballSizeStore<'_> {
+        SqliteSnowballSizeStore::new(&self.db)
     }
 
     fn card(&self, name: &str, balance_cents: i64) -> snowball::debts::DebtId {

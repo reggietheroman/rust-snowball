@@ -8,5 +8,7 @@ name = "snowball"
 path = "src/lib.rs"
 
 [dependencies]
+crossterm = "0.29.0"
+ratatui = "0.30.2"
 rusqlite = { version = "0.32", features = ["bundled"] }
 ulid = "1.1"

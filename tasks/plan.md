@@ -1,80 +1,105 @@
-# Implementation Plan: plan
+# Implementation Plan: tui
 
 ## Overview
 
-Amend statements so each card bill has a typed cycle month (`statement_month` `YYYY-MM`, unique per card). Then add `compute_plan`: a pure calculation (no new table) that turns a payment month into amounts to send, due dates, missing-statement flags, extra to the smallest remaining debt (rolling), and shortfall. When this plan is done, `tui` can call `compute_plan`; this module still does not read payments.
+Move `snowball_sizes` onto `SqliteDb`, then add the `snowball` binary: one home screen (this payment month in pesos, from `compute_plan`), vim-like keys, overlays for payments / statements / size, and a debts list. When this plan is done, `cargo run -- --db <path>` is the app; library modules still have no terminal code in them.
 
-Prior module archive: `tasks/plan-payments.md`, `tasks/todo-payments.md`.
+Prior module archive: `tasks/plan-plan.md`, `tasks/todo-plan.md`.
 
 ## Architecture Decisions
 
-- **Statements first.** Plan cannot load August bills without `statement_month`. Change `CREATE TABLE statements` for new in-memory DBs: `statement_month TEXT NOT NULL`, `UNIQUE(debt_id, statement_month)`, drop `UNIQUE(debt_id, due_on)`. Tests always open a fresh `:memory:` DB; no on-disk backfill in this plan.
-- **Do not infer the cycle.** Callers pass `statement_month`. `due_on` may fall in another calendar month. Upsert on `(debt_id, statement_month)` updates `minimum_cents` and `due_on`, keeps the same id.
-- **`list_for_month` on `StatementStore`.** Plan joins owed cards to that list. `current_for_debt` becomes latest `statement_month` (TUI). `upcoming` stays by `due_on`.
-- **`compute_plan` is a free function** on three store traits. No `PlanStore`. No SQLite table. Tests may use `SqliteDb` for debts/statements and a separate `SqliteSnowballSizeStore` (same as payments tests). Do not wire snowball-size onto `SqliteDb` in this plan.
-- **Calendar helpers live in `src/plan/validate.rs`.** Payment month `YYYY-MM`; previous month (January → previous December); loan due date = payment month + `due_day` clamped to last day of that month. Copy month-length rules next to this code; do not import `statements::validate`. Statements get their own `YYYY-MM` check for `statement_month`.
-- **Do not import `payments`.** Side-effect tests may open `SqlitePaymentStore` only in `tests/plan.rs` to assert row counts stay `0`.
-- **YYYY-MM must be zero-padded.** Reject `2026-9` and `2026-09-01`.
+- **One file, one `SqliteDb`.** `migrate()` creates `snowball_sizes` (`CREATE TABLE IF NOT EXISTS`, same columns as today). `SqliteSnowballSizeStore<'db>` takes `&SqliteDb` like payments. Drop the store’s own `Connection` and its private `migrate`. `open` / `open_in_memory` on the size store go away; tests hold `SqliteDb` and call `SqliteSnowballSizeStore::new(&db)`. Public `SnowballSizeStore` methods do not change.
+- **Clock is injected.** `App` takes `today` (`YYYY-MM-DD`) and starts `payment_month` as that date’s `YYYY-MM`. `tui::run` fills these from the local calendar once. Tests pass `"2026-09-08"` so home and overdue marks are not flaky.
+- **`handle_key` + `draw` are the API tests call.** `run` installs crossterm, loops, and exits when a command is quit. Tests never open a TTY: `TestBackend`, `handle_key`, inspect the buffer.
+- **Home is `compute_plan` only.** No `upcoming` pane. `?` missing statement, `!` when `due_on < today`. Pesos via `format_pesos` / `parse_pesos` (`src/tui/money.rs`). Raw cent counts never appear on money fields.
+- **Month step uses plan calendar helpers.** Add public `next_month` next to `previous_month` in `src/plan/validate.rs` and re-export both from `plan`. TUI does not copy month arithmetic.
+- **Mode enum, not booleans.** `Home`, `Help`, `Debts`, `Payments { debt_id }`, `Statements { debt_id }`, `Size`, `Form(...)`. Forms are a variant (or a nested enum) with a focused field. `q` quits in list modes; in a form it is a character. Esc discards a form, then closes an overlay.
+- **No clap.** `src/main.rs` reads `--db PATH` from `std::env::args`. Default: `$XDG_DATA_HOME/snowball/snowball.db` or `~/.local/share/snowball/snowball.db`. `create_dir_all` on the parent. No extra crates for paths.
+- **ratatui + crossterm** on the same package. Domain modules do not `use` them. Pin current stable at implement time; tests use `ratatui::backend::TestBackend`.
+- **No mouse. No color-only meaning.** Default terminal style. Marks are characters.
 
 ## Dependency graph (this module)
 
 ```
-statements: statement_month column + unique key
+snowball_sizes on SqliteDb
     │
-    ├── record / get / list_for_debt / current_for_debt
-    │
-    └── list_for_month
+    └── plan/payments tests share that db
             │
-            └── plan validate (payment month, previous month, clamp due day)
+            └── pesos + key map (pure)
                     │
-                    └── compute_plan: required lines (no recorded snowball)
+                    └── App + TestBackend empty home
                             │
-                            ├── extra rolls / cap remaining / name tie-break
-                            │
-                            └── shortfall when minima exceed recorded amount;
-                                no writes to payments, balances, or snowball history
+                            └── home draws compute_plan (h/l, marks, shortfall)
+                                    │
+                                    ├── payments overlay (record + edit)
+                                    ├── statements overlay
+                                    ├── size overlay
+                                    └── debts list (create / edit / set_balance)
+                                            │
+                                            └── binary: --db, default path, real run loop
 ```
 
 ## What can be parallel vs sequential
 
-All sequential. `list_for_month` must exist before `compute_plan` can load card bills.
+Foundation (Tasks 1–2) is sequential and blocks everything. Everything after Task 2 is sequential. Tasks 6–8 share `overlays.rs`. Debts list (`debts.rs`) comes after those overlays so home `d` and form helpers already exist. Binary last so `run` exists.
 
 ## Task List
 
 Index only. Full acceptance criteria live in `tasks/todo.md`.
 
-### Foundation: statements cycle month
+### Foundation: one SQLite file
 
-- [x] Task 1: `statement_month` on schema, types, validation, record/get; unique `(debt_id, statement_month)`
-- [x] Task 2: `list_for_month`; `current_for_debt` latest cycle month; `list_for_debt` ordered by cycle month
+- [x] Task 1: `snowball_sizes` on `SqliteDb`; size store on `&SqliteDb`
+- [x] Task 2: plan + payments tests use the shared db
 
-### Checkpoint: statements amendment
+### Checkpoint: Shared DB
 
-- [x] `cargo test --test statements` passes
-- [x] Payments / debts / snowball-size tests still pass
+- [x] `SqliteDb::open_in_memory()` creates `snowball_sizes`
+- [x] `cargo test --test snowball_size`, `--test plan`, `--test payments` pass
 
-### Plan slices
+### Home
 
-- [x] Task 3: Scaffold `plan`; reject bad payment month; empty register → empty lines
-- [x] Task 4: Required amounts, due dates, missing statement, omit paid-off; no recorded snowball
-- [x] Task 5: Extra rolls, remaining cap, name tie-break, shortfall, no side effects
+- [x] Task 3: `src/tui/` scaffold; pesos; key map; empty home on TestBackend
+- [x] Task 4: Home renders a seeded plan (pesos, `?` / `!`, shortfall, `h`/`l`)
+- [x] Task 5: `j`/`k` selection; `p`/`s` with no selection; `q` / Esc / `?` help
 
-### Checkpoint: plan complete
+### Checkpoint: Home
 
-- [x] All `SPEC-plan.md` success criteria met
-- [x] `SPEC-statements.md` amendment criteria met
-- [x] `cargo test --test plan`, statements, payments, debts, snowball_size, clippy, fmt pass
-- [x] Ready for `tui` spec
+- [x] Empty and seeded home buffers match `SPEC-tui.md` header + one list
+- [x] `cargo test --test tui` passes; no TTY
+
+### Write paths
+
+- [x] Task 6: Payments overlay — list, record, edit, overpayment flag
+- [x] Task 7: Statements overlay — list, record/upsert; `s` on a loan does not open
+- [x] Task 8: Size overlay — history newest first, record, header follows `current`
+- [x] Task 9: Debts list — create loan/card, edit, `set_balance`; paid-off visible here only
+
+### Checkpoint: Overlays
+
+- [x] Record/edit paths persist and home recomputes
+- [x] `cargo test --test tui` and library tests pass
+
+### Binary
+
+- [x] Task 10: `src/main.rs` — `--db`, default XDG path, `tui::run`
+
+### Checkpoint: tui complete
+
+- [x] All `SPEC-tui.md` success criteria met
+- [x] `cargo test`, clippy, fmt pass
+- [x] Ready for review
 
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Old `UNIQUE(debt_id, due_on)` left on the table | High | Replace the `CREATE TABLE` in `SqliteDb::migrate`. Fresh in-memory DBs only. Assert unique index in a db or statements test. |
-| `RecordStatement` call sites fail to compile | Med | Task 1 updates `tests/statements.rs` and `tests/payments.rs` in the same slice. |
-| Extra allocated before required lines are stable | Med | Task 4 is the no-snowball path only. Task 5 adds extra and shortfall. |
-| Loan due-day clamp wrong in short months | Med | Unit tests: due day 31 in September → `2026-09-30`; February non-leap. |
-| Accidental payments coupling | Med | `src/plan` does not `use` payments. Integration test: compute leaves payment rows and snowball `current` unchanged. |
+| Plan tests keep a second in-memory size DB | High | Task 2: one `SqliteDb`; `compute_plan` must see recorded sizes. Fail a plan test that records a size then computes if still split. |
+| Home tests depend on “today” | High | Inject `today = 2026-09-08` in every TUI test. |
+| `₱` width on TestBackend | Med | Unit-test `format_pesos`; buffer asserts on `1,234.56` and on `₱` if the backend keeps the codepoint. |
+| Overlay + form state explodes | Med | One `Mode` enum; forms are data + focused field index; no parallel boolean flags. |
+| `run` pulls crossterm into tests | Med | Tests call `handle_key` / `draw` only. `run` is thin and covered by a unit test that `--db` parsing does not need a TTY. |
+| File count on Task 6 | Med | Payments overlay is list + two forms in `overlays.rs` only; do not start statements in the same task. |
 
 ## Open Questions
 

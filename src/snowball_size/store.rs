@@ -1,49 +1,29 @@
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use rusqlite::{Connection, Error as SqliteError, params};
+use rusqlite::{Error as SqliteError, params};
 use ulid::Generator;
 
+use crate::db::SqliteDb;
 use crate::error::{Error, ErrorCode};
 use crate::snowball_size::validate::validate_record;
 use crate::snowball_size::{RecordSize, SizeId, SnowballSize, SnowballSizeStore};
 
-const SCHEMA: &str = "
-CREATE TABLE snowball_sizes (
-    id TEXT PRIMARY KEY NOT NULL,
-    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
-    recorded_at_unix INTEGER NOT NULL
-);
-";
-
-pub struct SqliteSnowballSizeStore {
-    conn: Connection,
+pub struct SqliteSnowballSizeStore<'db> {
+    db: &'db SqliteDb,
     id_gen: Mutex<Generator>,
 }
 
-impl SqliteSnowballSizeStore {
-    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, Error> {
-        let conn = Connection::open(path).map_err(map_sqlite_error)?;
-        let store = Self {
-            conn,
+impl<'db> SqliteSnowballSizeStore<'db> {
+    pub fn new(db: &'db SqliteDb) -> Self {
+        Self {
+            db,
             id_gen: Mutex::new(Generator::default()),
-        };
-        store.migrate()?;
-        Ok(store)
+        }
     }
 
-    pub fn open_in_memory() -> Result<Self, Error> {
-        let conn = Connection::open_in_memory().map_err(map_sqlite_error)?;
-        let store = Self {
-            conn,
-            id_gen: Mutex::new(Generator::default()),
-        };
-        store.migrate()?;
-        Ok(store)
-    }
-
-    fn migrate(&self) -> Result<(), Error> {
-        self.conn.execute_batch(SCHEMA).map_err(map_sqlite_error)
+    fn conn(&self) -> &rusqlite::Connection {
+        self.db.conn()
     }
 
     fn new_id(&self) -> Result<SizeId, Error> {
@@ -83,7 +63,7 @@ impl SqliteSnowballSizeStore {
         let sql = format!(
             "SELECT id, amount_cents, recorded_at_unix FROM snowball_sizes ORDER BY {order}"
         );
-        let mut stmt = self.conn.prepare(&sql).map_err(map_sqlite_error)?;
+        let mut stmt = self.conn().prepare(&sql).map_err(map_sqlite_error)?;
         let rows = stmt
             .query_map([], |row| {
                 Ok((
@@ -102,14 +82,14 @@ impl SqliteSnowballSizeStore {
     }
 }
 
-impl SnowballSizeStore for SqliteSnowballSizeStore {
+impl SnowballSizeStore for SqliteSnowballSizeStore<'_> {
     fn record(&self, input: RecordSize) -> Result<SnowballSize, Error> {
         validate_record(&input)?;
 
         let id = Self::new_id(self)?;
         let recorded_at_unix = Self::now_unix()?;
 
-        self.conn
+        self.conn()
             .execute(
                 "INSERT INTO snowball_sizes (id, amount_cents, recorded_at_unix)
                  VALUES (?1, ?2, ?3)",

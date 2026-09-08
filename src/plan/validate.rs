@@ -32,6 +32,15 @@ pub fn previous_month(payment_month: &str) -> Result<String, Error> {
     }
 }
 
+pub fn next_month(payment_month: &str) -> Result<String, Error> {
+    let (year, month) = validate_payment_month(payment_month)?;
+    if month == 12 {
+        Ok(format!("{}-01", year + 1))
+    } else {
+        Ok(format!("{year}-{:02}", month + 1))
+    }
+}
+
 pub fn loan_due_on(payment_month: &str, due_day: u8) -> Result<String, Error> {
     let (year, month) = validate_payment_month(payment_month)?;
     let max_day = days_in_month(year, month);
@@ -77,6 +86,11 @@ mod tests {
     #[test]
     fn previous_month_of_january_is_previous_december() {
         assert_eq!(previous_month("2026-01").expect("prev"), "2025-12");
+    }
+
+    #[test]
+    fn next_month_of_december_is_next_january() {
+        assert_eq!(next_month("2026-12").expect("next"), "2027-01");
     }
 
     #[test]

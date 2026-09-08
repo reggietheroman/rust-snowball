@@ -11,7 +11,7 @@ Personal debt-snowball tracker. Open it to see the committed snowball size, this
 | statements | Card statements: cycle month you type, minimum due, due date | debts |
 | payments | Payments you actually made, against a debt | debts |
 | plan | This payment month’s amounts to send: loan usual payments, previous-month card statements, extra to the smallest remaining debt (rolls); shortfall if required minima exceed the recorded snowball amount | debts, snowball-size, statements |
-| tui | Terminal UI, vim keys, upcoming due dates, recording sizes / statements / payments | plan, payments, statements, snowball-size, debts |
+| tui | One-screen TUI (vim-like keys, pesos): this month’s split and due dates; overlays to record size / statements / payments | plan, payments, statements, snowball-size, debts |
 
 Build order: `debts`, `snowball-size` → `statements`, `payments` → `plan` → `tui`
 
@@ -24,12 +24,12 @@ Build order: `debts`, `snowball-size` → `statements`, `payments` → `plan` �
 | statements | [SPEC-statements.md](SPEC-statements.md) |
 | payments | [SPEC-payments.md](SPEC-payments.md) |
 | plan | [SPEC-plan.md](SPEC-plan.md) |
-| tui | *(not written)* |
+| tui | [SPEC-tui.md](SPEC-tui.md) |
 
 ## Confirmed intent (summary)
 
 - **Outcome:** Committed snowball size, this month's split (fixed loans, current card mins, leftover on the smallest remaining debt), upcoming due dates so money can stay in a HYSA until the last comfortable moment.
 - **User:** One person. Local data. No accounts, sync, or bank import.
 - **Success:** Size changes only via a recorded ledger entry (up or down). Required payments over the size show a shortfall, not an automatic bump. Payments and card statements are logged.
-- **Constraint:** Computer TUI with vim key bindings. No notifications.
+- **Constraint:** Computer TUI with vim-like keys (not a vim emulator). Philippine pesos. No notifications.
 - **Out of scope:** Mobile, bank sync, push reminders, auto-changing snowball size, general budget/HYSA tracking, pay-early coaching.

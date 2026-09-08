@@ -134,7 +134,7 @@ This module does not write debts, statements, or snowball rows. It does not look
 
 ## Module contract (consumers)
 
-`tui` depends on: `compute_plan` (amounts, due dates, missing-statement flag, shortfall, unallocated).
+`tui` depends on: `compute_plan` (home header and the one plan list: amounts, due dates, missing-statement flag, shortfall, unallocated).
 
 This module depends on:
 
