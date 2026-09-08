@@ -142,7 +142,7 @@ VALIDATION_ERROR   — empty/duplicate name, negative cents, due_day not in 1–
 - [x] Two debts cannot share a name.
 - [x] `list` includes a debt whose balance is 0 (paid off); `plan` can ignore it by filtering.
 - [x] `reduce_balance` on $400 by $500 yields $0, not an error.
-- [ ] `increase_balance` on $0 by $400 yields $400; `cents <= 0` is `VALIDATION_ERROR`. Implement with `payments`.
+- [x] `increase_balance` on $0 by $400 yields $400; `cents <= 0` is `VALIDATION_ERROR`. Implement with `payments`.
 - [x] `set_balance` can raise a card balance (new spending) without going through `reduce_balance`.
 - [x] No public API exposes card minimum due or snowball size.
 - [x] `cargo test debts` passes with SQLite in memory.

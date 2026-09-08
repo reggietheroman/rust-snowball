@@ -66,4 +66,5 @@ pub trait DebtStore {
     fn update(&self, id: &DebtId, patch: UpdateDebt) -> Result<Debt, Error>;
     fn set_balance(&self, id: &DebtId, balance_cents: i64) -> Result<Debt, Error>;
     fn reduce_balance(&self, id: &DebtId, cents: i64) -> Result<Debt, Error>;
+    fn increase_balance(&self, id: &DebtId, cents: i64) -> Result<Debt, Error>;
 }

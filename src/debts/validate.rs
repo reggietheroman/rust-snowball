@@ -62,6 +62,13 @@ pub fn validate_reduce_amount(cents: i64) -> Result<(), Error> {
     Ok(())
 }
 
+pub fn validate_increase_amount(cents: i64) -> Result<(), Error> {
+    if cents <= 0 {
+        return Err(Error::validation("increase amount must be > 0"));
+    }
+    Ok(())
+}
+
 fn validate_name(name: &str) -> Result<(), Error> {
     if name.trim().is_empty() {
         return Err(Error::validation("name must not be empty"));
@@ -124,5 +131,11 @@ mod tests {
     fn rejects_non_positive_reduce_amount() {
         assert!(validate_reduce_amount(0).is_err());
         assert!(validate_reduce_amount(-1).is_err());
+    }
+
+    #[test]
+    fn rejects_non_positive_increase_amount() {
+        assert!(validate_increase_amount(0).is_err());
+        assert!(validate_increase_amount(-1).is_err());
     }
 }

@@ -1,38 +1,42 @@
-# Implementation Plan: statements
+# Implementation Plan: payments
 
 ## Overview
 
-Add credit-card statement tracking: minimum due and due date per `(card, due_on)`, with upsert on correction. Introduce `SqliteDb` so `statements.debt_id` references `debts.id` on one connection. Refactor `SqliteDebtStore` onto `SqliteDb` without changing public debt behavior. When this plan is done, `plan` can call `current_for_debt` and the TUI can call `upcoming`.
+Add the payment ledger: `record` / `get` / `list_for_debt` / `update`, each row reducing (or on edit, restoring then re-applying) remaining balance. Add `increase_balance` to `DebtStore`. Overpayment floors the debt at `$0`, stores `applied_cents`, and exposes `is_overpayment` for the TUI — this module does not draw the flag. When this plan is done, `tui` can log and edit payments; `plan` still does not read this module.
 
-Prior module archive: `tasks/plan-snowball-size.md`, `tasks/todo-snowball-size.md`.
+Prior module archive: `tasks/plan-statements.md`, `tasks/todo-statements.md`.
 
 ## Architecture Decisions
 
-- **`SqliteDb` owns one `Connection`.** `migrate()` runs `CREATE TABLE IF NOT EXISTS` for `debts` and `statements` (and can add `snowball_sizes` later). `PRAGMA foreign_keys = ON` on open.
-- **Stores hold `&SqliteDb` in tests, or wrap owned `SqliteDb`.** `SqliteDebtStore::open_in_memory()` stays for regression tests: create `SqliteDb`, return store that owns the db. Add `SqliteDebtStore::new(db: &SqliteDb)` for shared-db tests. Same pattern for `SqliteStatementStore`.
-- **Table `statements`:** `id`, `debt_id` FK → `debts.id`, `minimum_cents`, `due_on` TEXT `YYYY-MM-DD`, `UNIQUE(debt_id, due_on)`. Upsert on conflict updates `minimum_cents` only (id unchanged).
-- **Debt lookup on record.** Statement store calls `DebtStore::get` (via `SqliteDebtStore` on same db) or reads debt row directly — prefer reusing `get` through a shared db reference to avoid duplicating loan/card rules.
-- **Date validation** in `validate.rs`: strict `YYYY-MM-DD`, calendar-valid, no new date crate unless manual validation gets ugly.
-- **Ids:** `stmt_<ulid>` via monotonic `Generator` (same lesson as snowball-size).
-- **`current_for_debt`:** `ORDER BY due_on DESC, id DESC LIMIT 1`.
-- **`upcoming(as_of)`:** `WHERE due_on >= ? ORDER BY due_on ASC, id ASC`. No overdue method.
-- **`snowball-size`:** unchanged connection model in this plan; statement tests do not assert snowball size.
+- **Match `statements`.** `PaymentStore` trait + `SqlitePaymentStore<'db>` on `&SqliteDb`. Ids `pay_<ulid>` via monotonic `Generator`. Money as `i64` cents. Same in-memory harness as statements tests.
+- **Table `payments` on `SqliteDb`.** Columns: `id`, `debt_id` FK → `debts.id`, `amount_cents` CHECK `> 0`, `applied_cents` CHECK `>= 0`, `paid_on` TEXT. No `UNIQUE(debt_id, paid_on)`.
+- **`increase_balance` on `DebtStore`.** Dual of `reduce_balance`: `cents > 0`, `balance + cents`, no cap. Same `validate_*` as reduce for the amount. `OwnedDebtStore` forwards it. Implement before any payment write.
+- **Apply via `DebtStore`, not `set_balance`.** `record` / `update` call `reduce_balance` / `increase_balance` when the cents are `> 0`; skip the call at `0`.
+- **One transaction.** `record` and `update` wrap lookup + payment row + balance change in `unchecked_transaction()` on the shared connection, then `commit`. Failed validation rolls back. `SqliteDebtStore` already uses that same `Connection`; statements on it participate in the open txn.
+- **`applied_cents`.** Computed as `min(amount_cents, balance_before)` inside the txn. Callers never pass it. `Payment::is_overpayment` is `amount_cents > applied_cents`.
+- **Date validation.** Same calendar `YYYY-MM-DD` rules as statements. Copy into `src/payments/validate.rs` (field name `paid_on`). Do not import `statements` and do not extract a shared date module in this plan.
+- **Loans and cards.** Both are valid `debt_id`s. Unknown id → `NOT_FOUND`.
+- **No delete, no notes, no statement link, no snowball-size writes.**
 
 ## Dependency graph (this module)
 
 ```
-SqliteDb (debts + statements schema)
+increase_balance on DebtStore
     │
-    ├── Refactor SqliteDebtStore (behavior unchanged)
-    │
-    └── Statement types + StatementStore trait
+    └── payments table on SqliteDb
             │
-            ├── Validation (date, minimum >= 0, card-only via debt get)
-            │
-            └── SqliteStatementStore
+            └── Payment types + PaymentStore + validation
                     │
-                    └── Integration tests (shared in-memory db)
+                    └── SqlitePaymentStore::record / get
+                            │
+                            ├── overpayment / $0 / is_overpayment / two same-day
+                            │
+                            └── list_for_debt + update (amount, debt, paid_on)
 ```
+
+## What can be parallel vs sequential
+
+All sequential. `increase_balance` and the `payments` table must exist before `record`.
 
 ## Task List
 
@@ -40,33 +44,34 @@ Index only. Full acceptance criteria live in `tasks/todo.md`.
 
 ### Foundation
 
-- [ ] Task 1: `SqliteDb` + refactor `SqliteDebtStore`; debts tests still pass
+- [x] Task 1: `increase_balance` on `DebtStore`; debts tests still pass
+- [x] Task 2: `payments` table on `SqliteDb`
 
 ### Checkpoint: Shared DB
 
-- [ ] `cargo test --test debts` passes
-- [ ] `SqliteDb::open_in_memory()` creates both tables
+- [x] `cargo test --test debts` passes
+- [x] `SqliteDb::open_in_memory()` creates `payments`
 
-### Statement slices
+### Payment slices
 
-- [ ] Task 2: Scaffold statements module; `record` / `get`; reject loan, unknown debt, bad input
-- [ ] Task 3: Upsert same due date; `list_for_debt`; `current_for_debt` (latest `due_on`)
-- [ ] Task 4: `upcoming(as_of)`; recording does not change debt balance
+- [x] Task 3: Scaffold payments; `record` / `get`; apply `reduce_balance`; reject unknown debt and bad input
+- [x] Task 4: Overpayment, `$0` debt, exact payoff, two same-day rows
+- [x] Task 5: `list_for_debt`; `update` amount / debt / `paid_on`; no statement or snowball-size side effects
 
-### Checkpoint: statements complete
+### Checkpoint: payments complete
 
-- [ ] All `SPEC-statements.md` success criteria met
-- [ ] `cargo test --test statements`, `cargo test --test debts`, `cargo test --test snowball_size`, clippy, fmt pass
-- [ ] Ready for `payments` spec
+- [x] All `SPEC-payments.md` success criteria met
+- [x] `cargo test --test payments`, `cargo test --test debts`, `cargo test --test statements`, `cargo test --test snowball_size`, clippy, fmt pass
+- [x] Ready for `plan` spec
 
 ## Risks and Mitigations
 
 | Risk | Impact | Mitigation |
 |------|--------|------------|
-| Refactoring debts breaks tests | High | Task 1 is only refactor; run debts tests before statements code. |
-| Upsert id stability | Med | Integration test: record twice same due date, same `StatementId`, new minimum. |
-| Date parsing without chrono | Med | Unit tests for invalid dates including Feb 31; add `time` only if manual validation is error-prone. |
-| FK in in-memory SQLite | Low | Enable foreign_keys pragma; test record against missing debt. |
+| Transaction does not wrap debt updates | High | Integration test: invalid `paid_on` after a valid shape still leaves balance unchanged; crash-safety via one `commit`. |
+| Overpayment reverse invents balance | High | Store `applied_cents`; edit restores that, not `amount_cents`. Test $500 on $400 then edit amount. |
+| Date logic drifts from statements | Low | Copy the same calendar rules; shared extractor is out of scope. |
+| Accidental `statements` / snowball coupling | Med | Public types have no statement or size fields. Tests assert those tables/rows are untouched. |
 
 ## Open Questions
 

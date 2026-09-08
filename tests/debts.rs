@@ -276,6 +276,43 @@ fn reduce_balance_saturates_at_zero() {
 }
 
 #[test]
+fn increase_balance_adds_to_balance() {
+    let store = store();
+    let debt = store
+        .create(CreateDebt {
+            name: "Card".into(),
+            balance_cents: 0,
+            kind: CreateDebtKind::CreditCard,
+        })
+        .expect("create card");
+
+    let updated = store
+        .increase_balance(&debt.id, 400_00)
+        .expect("increase balance");
+    assert_eq!(updated.balance_cents, 400_00);
+}
+
+#[test]
+fn increase_balance_rejects_non_positive_and_missing_id() {
+    let store = store();
+    let debt = store
+        .create(CreateDebt {
+            name: "Card".into(),
+            balance_cents: 100,
+            kind: CreateDebtKind::CreditCard,
+        })
+        .expect("create card");
+
+    let err = store.increase_balance(&debt.id, 0).unwrap_err();
+    assert_eq!(err.code, ErrorCode::ValidationError);
+
+    let err = store
+        .increase_balance(&snowball::debts::DebtId::from_existing("debt_missing"), 10)
+        .unwrap_err();
+    assert_eq!(err.code, ErrorCode::NotFound);
+}
+
+#[test]
 fn reduce_balance_rejects_non_positive_and_missing_id() {
     let store = store();
     let debt = store

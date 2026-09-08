@@ -2,7 +2,8 @@ use rusqlite::{Error as SqliteError, params};
 
 use crate::db::SqliteDb;
 use crate::debts::validate::{
-    validate_balance, validate_create, validate_reduce_amount, validate_update,
+    validate_balance, validate_create, validate_increase_amount, validate_reduce_amount,
+    validate_update,
 };
 use crate::debts::{CreateDebt, CreateDebtKind, Debt, DebtId, DebtKind, DebtStore, UpdateDebt};
 use crate::error::{Error, ErrorCode};
@@ -234,6 +235,12 @@ impl<'db> DebtStore for SqliteDebtStore<'db> {
         let new_balance = (existing.balance_cents - cents).max(0);
         self.set_balance(id, new_balance)
     }
+
+    fn increase_balance(&self, id: &DebtId, cents: i64) -> Result<Debt, Error> {
+        validate_increase_amount(cents)?;
+        let existing = self.fetch_one(id)?;
+        self.set_balance(id, existing.balance_cents + cents)
+    }
 }
 
 pub struct OwnedDebtStore {
@@ -285,6 +292,10 @@ impl DebtStore for OwnedDebtStore {
 
     fn reduce_balance(&self, id: &DebtId, cents: i64) -> Result<Debt, Error> {
         self.borrow().reduce_balance(id, cents)
+    }
+
+    fn increase_balance(&self, id: &DebtId, cents: i64) -> Result<Debt, Error> {
+        self.borrow().increase_balance(id, cents)
     }
 }
 

@@ -23,6 +23,16 @@ CREATE TABLE IF NOT EXISTS statements (
 );
 ";
 
+const PAYMENTS_SCHEMA: &str = "
+CREATE TABLE IF NOT EXISTS payments (
+    id TEXT PRIMARY KEY NOT NULL,
+    debt_id TEXT NOT NULL REFERENCES debts(id),
+    amount_cents INTEGER NOT NULL CHECK (amount_cents > 0),
+    applied_cents INTEGER NOT NULL CHECK (applied_cents >= 0),
+    paid_on TEXT NOT NULL
+);
+";
+
 pub struct SqliteDb {
     conn: Connection,
 }
@@ -56,6 +66,9 @@ impl SqliteDb {
         self.conn
             .execute_batch(STATEMENTS_SCHEMA)
             .map_err(map_sqlite_error)?;
+        self.conn
+            .execute_batch(PAYMENTS_SCHEMA)
+            .map_err(map_sqlite_error)?;
         Ok(())
     }
 }
@@ -72,27 +85,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn open_in_memory_creates_debts_and_statements_tables() {
+    fn open_in_memory_creates_debts_statements_and_payments_tables() {
         let db = SqliteDb::open_in_memory().expect("open db");
         let conn = db.conn();
 
-        let debts: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'debts'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("debts table");
-        assert_eq!(debts, 1);
-
-        let statements: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'statements'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("statements table");
-        assert_eq!(statements, 1);
+        for table in ["debts", "statements", "payments"] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                    [table],
+                    |row| row.get(0),
+                )
+                .expect("table count");
+            assert_eq!(count, 1, "missing table {table}");
+        }
 
         let fk: i64 = conn
             .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
