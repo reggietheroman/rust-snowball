@@ -79,7 +79,7 @@ assert_eq!(parse_pesos("1,234.56")?, 123_456);
 
 ### Screens
 
-**Home (the app).** Header: payment month (`YYYY-MM`), committed size or **no size recorded**, **shortfall** only when `shortfall_cents` is `Some(n)` and `n > 0`, **unallocated** only when `unallocated_cents > 0`. Body: one list = `Plan.lines` (already due-date order). Columns: name, remaining, required, extra, send, due date. Marks (text, not color-only): `?` when `missing_statement`, `!` when `due_on` is `Some` and `<` local today. Extra `> 0` is visible in the extra column; no second mark is required.
+**Home (the app).** Header: payment month (`YYYY-MM`), committed size or **no size recorded**, **shortfall** only when `shortfall_cents` is `Some(n)` and `n > 0`, **unallocated** only when `unallocated_cents > 0`. Body: one table = `Plan.lines` (already due-date order) with a header row and right-aligned peso columns — no per-row `rem`/`req` labels. Columns: name, remaining, required, extra, send, due date. Marks (text, not color-only): `?` when `missing_statement`, `!` when `due_on` is `Some` and `<` local today. Extra `> 0` is visible in the extra column; no second mark is required.
 
 Default payment month is the local calendar month at launch. `h` / `l` step one calendar month (December `l` → next January). Each step calls `compute_plan` again.
 

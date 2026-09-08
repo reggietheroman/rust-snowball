@@ -1,8 +1,8 @@
 use ratatui::Frame;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Direction, Layout, Rect};
 use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, Paragraph};
+use ratatui::widgets::{Block, Borders, Cell, Paragraph, Row, Table};
 
 use crate::plan::Plan;
 use crate::tui::App;
@@ -78,62 +78,85 @@ fn draw_header(app: &App, frame: &mut Frame, area: Rect) {
 }
 
 fn draw_lines(app: &App, frame: &mut Frame, area: Rect, plan: &Plan) {
-    let items: Vec<ListItem> = plan
+    let widths = [
+        Constraint::Length(2),
+        Constraint::Min(12),
+        Constraint::Length(14),
+        Constraint::Length(14),
+        Constraint::Length(14),
+        Constraint::Length(14),
+        Constraint::Length(14),
+    ];
+
+    let header_style = Style::default().add_modifier(Modifier::BOLD);
+    let header = Row::new(vec![
+        Cell::from(""),
+        Cell::from("Name"),
+        Cell::from(Line::from("Remaining").alignment(Alignment::Right)),
+        Cell::from(Line::from("Required").alignment(Alignment::Right)),
+        Cell::from(Line::from("Extra").alignment(Alignment::Right)),
+        Cell::from(Line::from("Send").alignment(Alignment::Right)),
+        Cell::from(Line::from("Due").alignment(Alignment::Right)),
+    ])
+    .style(header_style)
+    .bottom_margin(1);
+
+    let rows: Vec<Row> = plan
         .lines
         .iter()
         .enumerate()
         .map(|(index, line)| {
-            let mark = line_mark(app, line);
             let due = line
                 .due_on
                 .as_deref()
                 .map(|d| d.to_string())
-                .unwrap_or_else(|| if line.missing_statement { "?".into() } else { "—".into() });
-
-            let text = format!(
-                "{mark}{name:<16} rem {remaining} req {required} extra {extra} send {send} due {due}",
-                mark = mark,
-                name = truncate_name(&line.name, 16),
-                remaining = format_pesos(line.remaining_cents),
-                required = format_pesos(line.required_cents),
-                extra = format_pesos(line.extra_cents),
-                send = format_pesos(line.send_cents),
-                due = due,
-            );
+                .unwrap_or_else(|| {
+                    if line.missing_statement {
+                        "?".into()
+                    } else {
+                        "—".into()
+                    }
+                });
 
             let style = if index == app.selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else {
                 Style::default()
             };
-            ListItem::new(text).style(style)
+
+            Row::new(vec![
+                Cell::from(line_mark(app, line)),
+                Cell::from(line.name.clone()),
+                peso_cell(line.remaining_cents),
+                peso_cell(line.required_cents),
+                peso_cell(line.extra_cents),
+                peso_cell(line.send_cents),
+                Cell::from(Line::from(due).alignment(Alignment::Right)),
+            ])
+            .style(style)
         })
         .collect();
 
-    let block = Block::default().borders(Borders::ALL).title("This month");
-    let list = List::new(items).block(block);
-    frame.render_widget(list, area);
+    let table = Table::new(rows, widths)
+        .column_spacing(1)
+        .header(header)
+        .block(Block::default().borders(Borders::ALL).title("This month"));
+
+    frame.render_widget(table, area);
 }
 
 fn line_mark(app: &App, line: &crate::plan::PlanLine) -> &'static str {
     if line.missing_statement {
-        return "? ";
+        return "?";
     }
     if let Some(due_on) = &line.due_on
         && due_on.as_str() < app.today.as_str()
     {
-        return "! ";
+        return "!";
     }
-    "  "
+    ""
 }
 
-fn truncate_name(name: &str, max: usize) -> String {
-    if name.len() <= max {
-        name.to_string()
-    } else {
-        format!(
-            "{}…",
-            name.chars().take(max.saturating_sub(1)).collect::<String>()
-        )
-    }
+fn peso_cell(cents: i64) -> Cell<'static> {
+    Cell::from(Line::from(format_pesos(cents)).alignment(Alignment::Right))
 }

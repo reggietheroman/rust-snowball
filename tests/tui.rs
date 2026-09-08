@@ -92,6 +92,11 @@ fn seeded_home_shows_plan_in_pesos() {
     assert!(text.contains("Card A"));
     assert!(text.contains("Loan B"));
     assert!(text.contains("2026-09-10"));
+    assert!(text.contains("Remaining"));
+    assert!(text.contains("Required"));
+    assert!(text.contains("Extra"));
+    assert!(text.contains("Send"));
+    assert!(text.contains("Due"));
 }
 
 #[test]
