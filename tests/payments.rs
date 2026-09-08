@@ -358,6 +358,7 @@ fn record_and_update_do_not_change_statements_or_snowball_size() {
         .statements()
         .record(RecordStatement {
             debt_id: debt_id.clone(),
+            statement_month: "2026-09".into(),
             minimum_cents: 50_00,
             due_on: "2026-10-01".into(),
         })

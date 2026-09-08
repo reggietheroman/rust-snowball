@@ -8,9 +8,9 @@ Personal debt-snowball tracker. Open it to see the committed snowball size, this
 |---|---|---|
 | debts | Loans and cards: name, balance, type, loan payment / due day | — |
 | snowball-size | Recorded size history. Size changes only when you record them | — |
-| statements | Card statements: minimum due and due date for a month | debts |
+| statements | Card statements: cycle month you type, minimum due, due date | debts |
 | payments | Payments you actually made, against a debt | debts |
-| plan | This month's split from current size, loan floors, and card mins; shortfall if required payments exceed the size; leftover goes to the smallest remaining debt | debts, snowball-size, statements |
+| plan | This payment month’s amounts to send: loan usual payments, previous-month card statements, extra to the smallest remaining debt (rolls); shortfall if required minima exceed the recorded snowball amount | debts, snowball-size, statements |
 | tui | Terminal UI, vim keys, upcoming due dates, recording sizes / statements / payments | plan, payments, statements, snowball-size, debts |
 
 Build order: `debts`, `snowball-size` → `statements`, `payments` → `plan` → `tui`
@@ -23,7 +23,7 @@ Build order: `debts`, `snowball-size` → `statements`, `payments` → `plan` �
 | snowball-size | [SPEC-snowball-size.md](SPEC-snowball-size.md) |
 | statements | [SPEC-statements.md](SPEC-statements.md) |
 | payments | [SPEC-payments.md](SPEC-payments.md) |
-| plan | *(not written)* |
+| plan | [SPEC-plan.md](SPEC-plan.md) |
 | tui | *(not written)* |
 
 ## Confirmed intent (summary)

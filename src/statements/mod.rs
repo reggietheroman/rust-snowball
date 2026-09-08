@@ -30,6 +30,7 @@ impl std::fmt::Display for StatementId {
 pub struct Statement {
     pub id: StatementId,
     pub debt_id: DebtId,
+    pub statement_month: String,
     pub minimum_cents: i64,
     pub due_on: String,
 }
@@ -37,6 +38,7 @@ pub struct Statement {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecordStatement {
     pub debt_id: DebtId,
+    pub statement_month: String,
     pub minimum_cents: i64,
     pub due_on: String,
 }
@@ -45,6 +47,7 @@ pub trait StatementStore {
     fn record(&self, input: RecordStatement) -> Result<Statement, Error>;
     fn get(&self, id: &StatementId) -> Result<Statement, Error>;
     fn list_for_debt(&self, debt_id: &DebtId) -> Result<Vec<Statement>, Error>;
+    fn list_for_month(&self, statement_month: &str) -> Result<Vec<Statement>, Error>;
     fn current_for_debt(&self, debt_id: &DebtId) -> Result<Option<Statement>, Error>;
     fn upcoming(&self, as_of: &str) -> Result<Vec<Statement>, Error>;
 }

@@ -3,6 +3,7 @@ use crate::statements::RecordStatement;
 
 pub fn validate_record(input: &RecordStatement) -> Result<(), Error> {
     validate_minimum(input.minimum_cents)?;
+    validate_statement_month(&input.statement_month)?;
     validate_due_on(&input.due_on)?;
     Ok(())
 }
@@ -11,6 +12,29 @@ pub fn validate_minimum(minimum_cents: i64) -> Result<(), Error> {
     if minimum_cents < 0 {
         return Err(Error::validation("minimum must be >= 0"));
     }
+    Ok(())
+}
+
+pub fn validate_statement_month(statement_month: &str) -> Result<(), Error> {
+    let parts: Vec<&str> = statement_month.split('-').collect();
+    if parts.len() != 2 {
+        return Err(Error::validation("statement_month must be YYYY-MM"));
+    }
+    if parts[0].len() != 4 || parts[1].len() != 2 {
+        return Err(Error::validation("statement_month must be YYYY-MM"));
+    }
+
+    let _year: i32 = parts[0]
+        .parse()
+        .map_err(|_| Error::validation("statement_month must be YYYY-MM"))?;
+    let month: u32 = parts[1]
+        .parse()
+        .map_err(|_| Error::validation("statement_month must be YYYY-MM"))?;
+
+    if !(1..=12).contains(&month) {
+        return Err(Error::validation("statement_month must be YYYY-MM"));
+    }
+
     Ok(())
 }
 
@@ -70,6 +94,20 @@ mod tests {
     use crate::debts::DebtId;
     use crate::error::ErrorCode;
 
+    fn record(
+        debt_id: &str,
+        statement_month: &str,
+        minimum_cents: i64,
+        due_on: &str,
+    ) -> RecordStatement {
+        RecordStatement {
+            debt_id: DebtId::from_existing(debt_id),
+            statement_month: statement_month.into(),
+            minimum_cents,
+            due_on: due_on.into(),
+        }
+    }
+
     #[test]
     fn rejects_invalid_dates() {
         let cases = [
@@ -80,12 +118,16 @@ mod tests {
             "not-a-date",
         ];
         for due_on in cases {
-            let err = validate_record(&RecordStatement {
-                debt_id: DebtId::from_existing("debt_x"),
-                minimum_cents: 100,
-                due_on: due_on.into(),
-            })
-            .unwrap_err();
+            let err = validate_record(&record("debt_x", "2026-08", 100, due_on)).unwrap_err();
+            assert_eq!(err.code, ErrorCode::ValidationError);
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_statement_month() {
+        for statement_month in ["2026-13", "2026-9", "2026-08-01", "26-08", "not-a-month"] {
+            let err =
+                validate_record(&record("debt_x", statement_month, 100, "2026-09-15")).unwrap_err();
             assert_eq!(err.code, ErrorCode::ValidationError);
         }
     }
@@ -100,6 +142,12 @@ mod tests {
             validate_due_on("2024-02-29").is_ok(),
             "leap day should pass"
         );
+    }
+
+    #[test]
+    fn accepts_valid_statement_month() {
+        assert!(validate_statement_month("2026-08").is_ok());
+        assert!(validate_statement_month("2026-01").is_ok());
     }
 
     #[test]

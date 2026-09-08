@@ -40,6 +40,7 @@ impl<'db> SqliteStatementStore<'db> {
     fn row_to_statement(
         id: String,
         debt_id: String,
+        statement_month: String,
         minimum_cents: i64,
         due_on: String,
     ) -> Result<Statement, Error> {
@@ -49,6 +50,7 @@ impl<'db> SqliteStatementStore<'db> {
         Ok(Statement {
             id: StatementId(id),
             debt_id: DebtId::from_existing(debt_id),
+            statement_month,
             minimum_cents,
             due_on,
         })
@@ -58,7 +60,7 @@ impl<'db> SqliteStatementStore<'db> {
         let mut stmt = self
             .conn()
             .prepare(
-                "SELECT id, debt_id, minimum_cents, due_on
+                "SELECT id, debt_id, statement_month, minimum_cents, due_on
                  FROM statements WHERE id = ?1",
             )
             .map_err(map_sqlite_error)?;
@@ -68,8 +70,9 @@ impl<'db> SqliteStatementStore<'db> {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })
             .map_err(|err| match err {
@@ -79,7 +82,7 @@ impl<'db> SqliteStatementStore<'db> {
                 other => map_sqlite_error(other),
             })?;
 
-        Self::row_to_statement(row.0, row.1, row.2, row.3)
+        Self::row_to_statement(row.0, row.1, row.2, row.3, row.4)
     }
 
     fn validate_debt_is_card(&self, debt_id: &DebtId) -> Result<(), Error> {
@@ -101,13 +104,15 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
         let id = self.new_id()?;
         self.conn()
             .execute(
-                "INSERT INTO statements (id, debt_id, minimum_cents, due_on)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(debt_id, due_on) DO UPDATE SET
-                     minimum_cents = excluded.minimum_cents",
+                "INSERT INTO statements (id, debt_id, statement_month, minimum_cents, due_on)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
+                 ON CONFLICT(debt_id, statement_month) DO UPDATE SET
+                     minimum_cents = excluded.minimum_cents,
+                     due_on = excluded.due_on",
                 params![
                     id.as_str(),
                     input.debt_id.as_str(),
+                    input.statement_month,
                     input.minimum_cents,
                     input.due_on,
                 ],
@@ -117,24 +122,28 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
         let mut stmt = self
             .conn()
             .prepare(
-                "SELECT id, debt_id, minimum_cents, due_on
+                "SELECT id, debt_id, statement_month, minimum_cents, due_on
                  FROM statements
-                 WHERE debt_id = ?1 AND due_on = ?2",
+                 WHERE debt_id = ?1 AND statement_month = ?2",
             )
             .map_err(map_sqlite_error)?;
 
         let row = stmt
-            .query_row(params![input.debt_id.as_str(), input.due_on], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
-                ))
-            })
+            .query_row(
+                params![input.debt_id.as_str(), input.statement_month],
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, String>(2)?,
+                        row.get::<_, i64>(3)?,
+                        row.get::<_, String>(4)?,
+                    ))
+                },
+            )
             .map_err(map_sqlite_error)?;
 
-        Self::row_to_statement(row.0, row.1, row.2, row.3)
+        Self::row_to_statement(row.0, row.1, row.2, row.3, row.4)
     }
 
     fn get(&self, id: &StatementId) -> Result<Statement, Error> {
@@ -145,10 +154,10 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
         let mut stmt = self
             .conn()
             .prepare(
-                "SELECT id, debt_id, minimum_cents, due_on
+                "SELECT id, debt_id, statement_month, minimum_cents, due_on
                  FROM statements
                  WHERE debt_id = ?1
-                 ORDER BY due_on ASC, id ASC",
+                 ORDER BY statement_month ASC, id ASC",
             )
             .map_err(map_sqlite_error)?;
 
@@ -157,15 +166,50 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })
             .map_err(map_sqlite_error)?;
 
         rows.map(|row| {
-            let (id, debt_id, minimum_cents, due_on) = row.map_err(map_sqlite_error)?;
-            Self::row_to_statement(id, debt_id, minimum_cents, due_on)
+            let (id, debt_id, statement_month, minimum_cents, due_on) =
+                row.map_err(map_sqlite_error)?;
+            Self::row_to_statement(id, debt_id, statement_month, minimum_cents, due_on)
+        })
+        .collect()
+    }
+
+    fn list_for_month(&self, statement_month: &str) -> Result<Vec<Statement>, Error> {
+        crate::statements::validate::validate_statement_month(statement_month)?;
+
+        let mut stmt = self
+            .conn()
+            .prepare(
+                "SELECT id, debt_id, statement_month, minimum_cents, due_on
+                 FROM statements
+                 WHERE statement_month = ?1
+                 ORDER BY debt_id ASC, id ASC",
+            )
+            .map_err(map_sqlite_error)?;
+
+        let rows = stmt
+            .query_map(params![statement_month], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
+                ))
+            })
+            .map_err(map_sqlite_error)?;
+
+        rows.map(|row| {
+            let (id, debt_id, statement_month, minimum_cents, due_on) =
+                row.map_err(map_sqlite_error)?;
+            Self::row_to_statement(id, debt_id, statement_month, minimum_cents, due_on)
         })
         .collect()
     }
@@ -174,10 +218,10 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
         let mut stmt = self
             .conn()
             .prepare(
-                "SELECT id, debt_id, minimum_cents, due_on
+                "SELECT id, debt_id, statement_month, minimum_cents, due_on
                  FROM statements
                  WHERE debt_id = ?1
-                 ORDER BY due_on DESC, id DESC
+                 ORDER BY statement_month DESC, id DESC
                  LIMIT 1",
             )
             .map_err(map_sqlite_error)?;
@@ -186,18 +230,16 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, String>(3)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+                row.get::<_, String>(4)?,
             ))
         });
 
         match row {
-            Ok((id, debt_id, minimum_cents, due_on)) => Ok(Some(Self::row_to_statement(
-                id,
-                debt_id,
-                minimum_cents,
-                due_on,
-            )?)),
+            Ok((id, debt_id, statement_month, minimum_cents, due_on)) => Ok(Some(
+                Self::row_to_statement(id, debt_id, statement_month, minimum_cents, due_on)?,
+            )),
             Err(SqliteError::QueryReturnedNoRows) => Ok(None),
             Err(err) => Err(map_sqlite_error(err)),
         }
@@ -209,7 +251,7 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
         let mut stmt = self
             .conn()
             .prepare(
-                "SELECT id, debt_id, minimum_cents, due_on
+                "SELECT id, debt_id, statement_month, minimum_cents, due_on
                  FROM statements
                  WHERE due_on >= ?1
                  ORDER BY due_on ASC, id ASC",
@@ -221,15 +263,17 @@ impl<'db> StatementStore for SqliteStatementStore<'db> {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, i64>(2)?,
-                    row.get::<_, String>(3)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, i64>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })
             .map_err(map_sqlite_error)?;
 
         rows.map(|row| {
-            let (id, debt_id, minimum_cents, due_on) = row.map_err(map_sqlite_error)?;
-            Self::row_to_statement(id, debt_id, minimum_cents, due_on)
+            let (id, debt_id, statement_month, minimum_cents, due_on) =
+                row.map_err(map_sqlite_error)?;
+            Self::row_to_statement(id, debt_id, statement_month, minimum_cents, due_on)
         })
         .collect()
     }

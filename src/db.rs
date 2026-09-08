@@ -17,9 +17,10 @@ const STATEMENTS_SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS statements (
     id TEXT PRIMARY KEY NOT NULL,
     debt_id TEXT NOT NULL REFERENCES debts(id),
+    statement_month TEXT NOT NULL,
     minimum_cents INTEGER NOT NULL CHECK (minimum_cents >= 0),
     due_on TEXT NOT NULL,
-    UNIQUE (debt_id, due_on)
+    UNIQUE (debt_id, statement_month)
 );
 ";
 
